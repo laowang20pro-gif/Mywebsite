@@ -1,6 +1,7 @@
 
 import type { Metadata } from "next";
 import "./globals.css";
+import ErrorDebug from "./ErrorDebug";
 
 export const metadata: Metadata = {
   title: "短剧 AI 工作台",
@@ -14,8 +15,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <ErrorDebug />
+        {children}
+      </body>
     </html>
   );
 }
-
