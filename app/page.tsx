@@ -1,216 +1,484 @@
 
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from "react";
+import {
+  Plus,
+  FolderOpen,
+  MoreHorizontal,
+  Trash2,
+  Clapperboard,
+  Clock3,
+  Sparkles,
+  Search,
+  X,
+  Film,
+  ArrowUpRight
+} from "lucide-react";
+import AppShell from "@/components/layout/AppShell";
 
 type Project = {
-  id: string
-  name: string
-  outline: string
-  genre: string
-  episodes: number
-  duration: number
-  ratio: string
-  style: string
-  createdAt: number
-}
+  id: string;
+  name: string;
+  outline: string;
+  genre: string;
+  episodes: number;
+  duration: string;
+  ratio: string;
+  style: string;
+  createdAt: string;
+};
 
-export default function Dashboard() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  
-  const [formData, setFormData] = useState({
-    name: '',
-    outline: '',
-    genre: '都市/霸总',
-    episodes: 12,
-    duration: 60,
-    ratio: '9:16',
-    style: '赛博朋克'
-  })
+const STORAGE_KEY = "ai_drama_projects";
+
+export default function HomePage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [menuId, setMenuId] = useState<string | null>(null);
+
+  const [form, setForm] = useState({
+    name: "",
+    outline: "",
+    genre: "都市情感",
+    episodes: "20",
+    duration: "60秒",
+    ratio: "9:16",
+    style: "电影写实"
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem('ai_drama_projects')
-    if (saved) setProjects(JSON.parse(saved))
-  }, [])
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setProjects(parsed);
+      }
+    } catch {
+      console.error("项目数据读取失败");
+    }
+    setLoaded(true);
+  }, []);
 
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.name) return alert('请输入项目名称')
+  useEffect(() => {
+    if (loaded) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+    }
+  }, [projects, loaded]);
+
+  function createProject() {
+    if (!form.name.trim()) {
+      alert("请填写项目名称");
+      return;
+    }
 
     const newProject: Project = {
-      id: crypto.randomUUID(),
-      name: formData.name,
-      outline: formData.outline,
-      genre: formData.genre,
-      episodes: formData.episodes,
-      duration: formData.duration,
-      ratio: formData.ratio,
-      style: formData.style,
-      createdAt: Date.now()
-    }
+      id: `project_${Date.now()}`,
+      name: form.name.trim(),
+      outline: form.outline.trim(),
+      genre: form.genre,
+      episodes: Number(form.episodes) || 20,
+      duration: form.duration,
+      ratio: form.ratio,
+      style: form.style,
+      createdAt: new Date().toISOString()
+    };
 
-    const updated = [newProject, ...projects]
-    setProjects(updated)
-    localStorage.setItem('ai_drama_projects', JSON.stringify(updated))
-    setIsModalOpen(false)
-    setFormData({ name: '', outline: '', genre: '都市/霸总', episodes: 12, duration: 60, ratio: '9:16', style: '赛博朋克' })
+    setProjects((current) => [newProject, ...current]);
+    setForm({
+      name: "",
+      outline: "",
+      genre: "都市情感",
+      episodes: "20",
+      duration: "60秒",
+      ratio: "9:16",
+      style: "电影写实"
+    });
+    setModalOpen(false);
   }
 
-  const deleteProject = (id: string) => {
-    if(confirm('确认删除该项目吗？')) {
-      const updated = projects.filter(p => p.id !== id)
-      setProjects(updated)
-      localStorage.setItem('ai_drama_projects', JSON.stringify(updated))
-    }
+  function deleteProject(id: string) {
+    const confirmed = window.confirm(
+      "确定删除这个项目吗？删除后无法恢复。"
+    );
+
+    if (!confirmed) return;
+
+    setProjects((current) => current.filter((item) => item.id !== id));
+    setMenuId(null);
   }
+
+  const filteredProjects = projects.filter((project) => {
+    const keyword = search.trim().toLowerCase();
+    return (
+      project.name.toLowerCase().includes(keyword) ||
+      project.genre.toLowerCase().includes(keyword)
+    );
+  });
+
+  const totalEpisodes = projects.reduce(
+    (sum, project) => sum + project.episodes,
+    0
+  );
 
   return (
-    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-slate-50 text-slate-800 font-sans pb-16 md:pb-0">
-      
-      {/* 电脑端左侧导航栏 */}
-      <aside className="w-64 bg-slate-900 text-slate-300 hidden md:flex flex-col shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-slate-800 text-white">
-          <span className="text-xl font-bold tracking-wider">🎬 短剧 AI 工作台</span>
-        </div>
-        <div className="mx-4 mt-6 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center shadow-inner">
-          <p className="text-xs text-indigo-300 mb-1">当前状态</p>
-          <p className="text-sm font-bold text-white">✅ 免登录体验版</p>
-        </div>
-        <nav className="flex-1 p-4 space-y-1 mt-4">
-          {['项目管理', '素材库', '视频生成', '任务中心', '视频与成片'].map((item, i) => (
-            <a key={i} href="#" className={`block px-4 py-3 rounded-lg text-sm font-medium transition-all ${i === 0 ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
-              {item}
-            </a>
-          ))}
-        </nav>
-      </aside>
+    <AppShell>
+      <div className="mx-auto max-w-[1400px]">
+        {/* 页面标题 */}
+        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-brand">
+              <Sparkles size={14} />
+              AI CREATIVE WORKSPACE
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-[28px]">
+              项目管理
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              管理你的短剧创作项目，从故事构思到视频成片。
+            </p>
+          </div>
 
-      {/* 手机端底部导航栏 */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 flex justify-around items-center h-16 z-40 border-t border-slate-800">
-        {['项目', '素材', '生成', '任务'].map((item, i) => (
-          <a key={i} href="#" className={`flex flex-col items-center justify-center w-full h-full text-xs ${i === 0 ? 'text-indigo-400 font-bold' : ''}`}>
-             <span className="text-lg mb-1">{['📁', '🖼️', '🎬', '⏳'][i]}</span>
-             {item}
-          </a>
-        ))}
-      </nav>
-
-      {/* 右侧主内容 */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 shrink-0 shadow-sm z-10">
-          <h2 className="text-lg md:text-xl font-bold text-slate-800">我的短剧项目</h2>
-          <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 md:px-5 md:py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg flex items-center gap-1">
-            <span>+</span> 新建
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
+          >
+            <Plus size={18} />
+            新建项目
           </button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          {projects.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 mt-20 md:mt-0">
-              <div className="text-6xl mb-6 opacity-50">🎬</div>
-              <p className="text-lg font-medium text-slate-600 mb-2">还没有任何项目</p>
-              <p className="text-sm text-center">点击右上角“新建”，开启你的 AI 创作</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-              {projects.map((project) => (
-                <div key={project.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-xl transition-all duration-300 flex flex-col group">
-                  <div className="h-36 md:h-44 w-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 relative flex items-center justify-center overflow-hidden">
-                    <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors"></div>
-                    <span className="text-white/80 text-2xl font-bold z-10">{project.style}</span>
-                    <span className="absolute top-3 right-3 bg-black/60 text-white text-xs px-2.5 py-1 rounded-md backdrop-blur-sm z-10">{project.ratio}</span>
-                  </div>
-                  <div className="p-4 md:p-5 flex-1 flex flex-col">
-                    <h3 className="font-bold text-base md:text-lg text-slate-800 mb-2 truncate">{project.name}</h3>
-                    <p className="text-xs md:text-sm text-slate-500 line-clamp-2 mb-3 flex-1">{project.outline || '暂无大纲...'}</p>
-                    <div className="flex justify-between text-[11px] md:text-xs text-slate-400 mb-3 bg-slate-50 p-2 rounded-md">
-                      <span>{project.genre}</span>
-                      <span>{project.episodes}集 · {project.duration}秒</span>
-                    </div>
-                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-                       <button className="text-indigo-600 font-bold text-sm hover:text-indigo-800 transition-colors">进入项目详情 →</button>
-                       <button onClick={() => deleteProject(project.id)} className="text-slate-400 hover:text-red-500 text-xs font-medium transition-colors bg-slate-100 px-2 py-1 rounded">删除</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-      </main>
 
-      {/* 新建项目弹窗 (手机适配版) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-end md:items-center justify-center z-50 p-0 md:p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] md:max-h-[85vh] animate-slide-up">
-            <div className="px-5 py-4 md:px-6 md:py-5 border-b flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
-              <h2 className="text-lg md:text-xl font-bold text-slate-800">新建短剧项目</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none p-2">&times;</button>
+        {/* 数据概览 */}
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="panel p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">我的项目</span>
+              <div className="rounded-lg bg-indigo-50 p-2 text-brand">
+                <FolderOpen size={18} />
+              </div>
             </div>
-            
-            <form onSubmit={handleCreateProject} className="p-5 md:p-6 overflow-y-auto space-y-4 md:space-y-5 flex-1">
-              {/* 手机端单列，电脑端双列 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-                <div className="col-span-1 md:col-span-2">
-                  <label className="block text-sm font-bold mb-2 text-slate-700">项目名称 <span className="text-red-500">*</span></label>
-                  <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm" placeholder="例如：重生之我在古代做首富" />
-                </div>
-                <div className="col-span-1 md:col-span-2">
-                  <label className="block text-sm font-bold mb-2 text-slate-700">故事大纲 / 创意想法</label>
-                  <textarea value={formData.outline} onChange={e => setFormData({...formData, outline: e.target.value})} rows={3} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm" placeholder="输入一句话创意..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2 text-slate-700">题材</label>
-                  <select value={formData.genre} onChange={e => setFormData({...formData, genre: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm">
-                    <option>都市/霸总</option>
-                    <option>悬疑/推理</option>
-                    <option>古装/穿越</option>
-                    <option>科幻/赛博</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2 text-slate-700">视觉风格</label>
-                  <select value={formData.style} onChange={e => setFormData({...formData, style: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm">
-                    <option>真实写实</option>
-                    <option>动漫二次元</option>
-                    <option>赛博朋克</option>
-                    <option>国风水墨</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2 text-slate-700">总集数</label>
-                  <input type="number" value={formData.episodes} onChange={e => setFormData({...formData, episodes: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold mb-2 text-slate-700">单集时长(秒)</label>
-                  <input type="number" value={formData.duration} onChange={e => setFormData({...formData, duration: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm" />
-                </div>
-                <div className="col-span-1 md:col-span-2">
-                  <label className="block text-sm font-bold mb-2 text-slate-700">画面比例</label>
-                  <div className="flex gap-2 md:gap-4">
-                    {['9:16', '16:9', '1:1'].map(ratio => (
-                      <label key={ratio} className={`flex-1 text-center py-3 rounded-lg border-2 cursor-pointer text-sm font-bold transition-all ${formData.ratio === ratio ? 'bg-indigo-50 border-indigo-600 text-indigo-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'}`}>
-                        <input type="radio" checked={formData.ratio === ratio} onChange={e => setFormData({...formData, ratio: e.target.value})} className="hidden" />
-                        {ratio}
-                      </label>
-                    ))}
+            <div className="mt-4 text-3xl font-bold tabular-nums text-slate-900">
+              {projects.length}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">当前创建的项目数量</div>
+          </div>
+
+          <div className="panel p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">规划剧集</span>
+              <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
+                <Clapperboard size={18} />
+              </div>
+            </div>
+            <div className="mt-4 text-3xl font-bold tabular-nums text-slate-900">
+              {totalEpisodes}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">项目设定的剧集总数</div>
+          </div>
+
+          <div className="panel p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">创作模式</span>
+              <div className="rounded-lg bg-amber-50 p-2 text-amber-600">
+                <Film size={18} />
+              </div>
+            </div>
+            <div className="mt-4 text-xl font-bold text-slate-900">
+              AI 短剧创作
+            </div>
+            <div className="mt-2 text-xs text-slate-400">项目数据暂存在本地浏览器</div>
+          </div>
+        </div>
+
+        {/* 项目列表标题 */}
+        <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">全部项目</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              共 {projects.length} 个项目
+            </p>
+          </div>
+
+          <div className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 sm:w-[260px]">
+            <Search size={16} className="text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索项目名称或题材"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+            />
+          </div>
+        </div>
+
+        {/* 项目列表 */}
+        {!loaded ? (
+          <div className="panel p-12 text-center text-sm text-slate-400">
+            正在加载项目...
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="panel flex min-h-[320px] flex-col items-center justify-center px-5 py-12 text-center">
+            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-light text-brand">
+              {search ? <Search size={28} /> : <FolderOpen size={28} />}
+            </div>
+
+            <h3 className="text-base font-semibold text-slate-900">
+              {search ? "没有找到匹配的项目" : "还没有创作项目"}
+            </h3>
+
+            <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">
+              {search
+                ? "试试其他关键词，或者清空搜索内容。"
+                : "创建你的第一个短剧项目，开始规划故事、人物、剧集和分镜。"}
+            </p>
+
+            {!search && (
+              <button
+                onClick={() => setModalOpen(true)}
+                className="mt-6 flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-dark"
+              >
+                <Plus size={17} />
+                创建第一个项目
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filteredProjects.map((project) => (
+              <div
+                key={project.id}
+                className="panel group relative p-5 transition hover:-translate-y-0.5 hover:shadow-soft"
+              >
+                <div className="mb-4 flex items-start justify-between">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-light text-brand">
+                    <Film size={21} />
                   </div>
+
+                  <div className="relative">
+                    <button
+                      onClick={() =>
+                        setMenuId(menuId === project.id ? null : project.id)
+                      }
+                      className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      aria-label="项目操作"
+                    >
+                      <MoreHorizontal size={19} />
+                    </button>
+
+                    {menuId === project.id && (
+                      <div className="absolute right-0 top-10 z-20 w-36 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                        <button
+                          onClick={() => deleteProject(project.id)}
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 size={15} />
+                          删除项目
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <h3 className="truncate text-base font-bold text-slate-900">
+                  {project.name}
+                </h3>
+
+                <p className="mt-2 min-h-[40px] text-sm leading-5 text-slate-500">
+                  {project.outline || "暂未填写故事大纲"}
+                </p>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                    {project.genre}
+                  </span>
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                    {project.episodes} 集
+                  </span>
+                  <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                    {project.ratio}
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <Clock3 size={13} />
+                    {new Date(project.createdAt).toLocaleDateString("zh-CN")}
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      alert("项目详情页面将在后续开发批次中接入。")
+                    }
+                    className="flex items-center gap-1 text-xs font-semibold text-brand hover:text-brand-dark"
+                  >
+                    进入项目
+                    <ArrowUpRight size={14} />
+                  </button>
                 </div>
               </div>
-            </form>
-            
-            {/* 底部固定按钮区 */}
-            <div className="p-4 md:p-6 border-t border-slate-100 bg-white rounded-b-2xl flex gap-3 shrink-0 pb-safe">
-              <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">取消</button>
-              <button onClick={handleCreateProject} className="flex-[2] py-3.5 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-md transition-all flex justify-center items-center gap-2">
-                ✨ 确认创建
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 新建项目弹窗 */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-6 py-5">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">新建项目</h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  创建你的短剧创作项目
+                </p>
+              </div>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                aria-label="关闭弹窗"
+              >
+                <X size={19} />
               </button>
             </div>
 
+            <div className="space-y-5 p-6">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  项目名称 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm({ ...form, name: event.target.value })
+                  }
+                  placeholder="例如：重生之商业女王"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  故事大纲
+                </label>
+                <textarea
+                  value={form.outline}
+                  onChange={(event) =>
+                    setForm({ ...form, outline: event.target.value })
+                  }
+                  placeholder="简单描述你的短剧故事、人物关系和核心冲突..."
+                  rows={4}
+                  className="input-field resize-y"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    题材
+                  </label>
+                  <select
+                    value={form.genre}
+                    onChange={(event) =>
+                      setForm({ ...form, genre: event.target.value })
+                    }
+                    className="input-field"
+                  >
+                    {["都市情感", "豪门恩怨", "悬疑推理", "古装玄幻", "甜宠爱情", "逆袭复仇", "科幻未来", "其他"].map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    预计集数
+                  </label>
+                  <select
+                    value={form.episodes}
+                    onChange={(event) =>
+                      setForm({ ...form, episodes: event.target.value })
+                    }
+                    className="input-field"
+                  >
+                    {["10", "20", "30", "40", "50", "60", "80", "100"].map((item) => (
+                      <option key={item} value={item}>{item} 集</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    单集时长
+                  </label>
+                  <select
+                    value={form.duration}
+                    onChange={(event) =>
+                      setForm({ ...form, duration: event.target.value })
+                    }
+                    className="input-field"
+                  >
+                    {["30秒", "60秒", "90秒", "120秒", "180秒"].map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    视频比例
+                  </label>
+                  <select
+                    value={form.ratio}
+                    onChange={(event) =>
+                      setForm({ ...form, ratio: event.target.value })
+                    }
+                    className="input-field"
+                  >
+                    <option>9:16</option>
+                    <option>16:9</option>
+                    <option>1:1</option>
+                    <option>4:3</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    视觉风格
+                  </label>
+                  <select
+                    value={form.style}
+                    onChange={(event) =>
+                      setForm({ ...form, style: event.target.value })
+                    }
+                    className="input-field"
+                  >
+                    {["电影写实", "动漫风格", "3D动画", "国风", "赛博朋克", "水墨风格"].map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="h-10 rounded-lg border border-slate-200 px-5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={createProject}
+                  className="flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-dark"
+                >
+                  <Plus size={16} />
+                  创建项目
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
-    </div>
-  )
+    </AppShell>
+  );
 }
+
