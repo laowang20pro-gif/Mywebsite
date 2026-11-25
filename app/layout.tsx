@@ -1,24 +1,21 @@
 
 import type { Metadata } from "next";
 import "./globals.css";
-import ErrorDebug from "./ErrorDebug";
 
 export const metadata: Metadata = {
   title: "短剧 AI 工作台",
-  description: "AI 短剧创作与视频生成工作平台"
+  description: "AI 短剧创作平台"
 };
 
 export default function RootLayout({
   children
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="zh-CN">
-      <body>
-        <ErrorDebug />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
+
