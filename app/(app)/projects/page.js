@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/auth';
 
@@ -39,7 +40,7 @@ export default function ProjectsPage() {
     load();
   }
   async function del(p) {
-    if (!confirm(`确定删除“${p.name}”？删除后无法恢复。`)) return;
+    if (!confirm(`确定删除“${p.name}”？项目里的剧集和分镜也会一起删除，无法恢复。`)) return;
     const { error } = await supabase.from('projects').delete().eq('id', p.id);
     if (error) setMsg(error.message);
     load();
@@ -90,6 +91,7 @@ export default function ProjectsPage() {
                   <h3>{p.name}</h3>
                   <div className="mute">{p.genre || '未设题材'} · {new Date(p.created_at).toLocaleDateString('zh-CN')}</div>
                   <div className="row" style={{ marginTop: 12 }}>
+                    <Link href={`/projects/${p.id}`} className="btn p">打开</Link>
                     <button className="btn" onClick={() => setStatus(p, archived ? 'active' : 'archived')}>{archived ? '恢复' : '归档'}</button>
                     <button className="btn d" onClick={() => del(p)}>删除</button>
                   </div>
@@ -102,3 +104,4 @@ export default function ProjectsPage() {
     </>
   );
 }
+
