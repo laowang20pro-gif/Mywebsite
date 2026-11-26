@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/auth';
 
@@ -11,7 +12,6 @@ export default function ScriptsPage() {
   const [openId, setOpenId] = useState(null);
   const [draft, setDraft] = useState({ title: '', content: '' });
   const [msg, setMsg] = useState('');
-  const [note, setNote] = useState('');
 
   async function load() {
     const { data, error } = await supabase.from('scripts').select('*').order('created_at', { ascending: false });
@@ -26,7 +26,6 @@ export default function ScriptsPage() {
   function open(s) {
     setOpenId(openId === s.id ? null : s.id);
     setDraft({ title: s.title, content: s.content });
-    setNote('');
   }
   async function save(s) {
     const { error } = await supabase.from('scripts').update({ title: draft.title, content: draft.content, updated_at: new Date().toISOString() }).eq('id', s.id);
@@ -62,10 +61,9 @@ export default function ScriptsPage() {
               <div className="mute">{new Date(s.created_at).toLocaleDateString('zh-CN')} · {s.content.slice(0, 40).replace(/\n/g, ' ')}…</div>
               <div className="row" style={{ marginTop: 12 }}>
                 <button className="btn" onClick={() => open(s)}>{openId === s.id ? '收起' : '查看 / 修改'}</button>
-                <button className="btn p" onClick={() => setNote(s.id)}>用此剧本生成项目</button>
+                <Link href={`/scripts/${s.id}/plan`} className="btn p">用此剧本生成项目</Link>
                 <button className="btn d" onClick={() => del(s)}>删除</button>
               </div>
-              {note === s.id && <p className="mute" style={{ marginBottom: 0 }}><span className="tag">未开放</span> 自动生成剧集和分镜的功能还没有做，后续阶段上线。</p>}
               {openId === s.id && (
                 <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
                   <input style={fld} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
