@@ -1,77 +1,26 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { usePathname } from 'next/navigation';
 
-export default function ProjectsPage() {
-  const [list, setList] = useState(null);
-  const [q, setQ] = useState('');
-  const [archived, setArchived] = useState(false);
-  const [name, setName] = useState('');
-  const [genre, setGenre] = useState('');
-  const [msg, setMsg] = useState('');
+const INFO = {
+  assets: ['素材库', '管理人物、场景、道具、服装，分全局素材和项目素材，支持 AI 生成和版本记录。'],
+  generate: ['视频生成', '选择模型和参数，单个或批量生成分镜视频，生成前显示预计积分。'],
+  tasks: ['任务中心', '查看生成任务的排队、进度、失败原因，支持暂停、取消和重试。'],
+  videos: ['视频与成片', '管理每个分镜的视频版本，剪辑拼接并导出成片。'],
+  account: ['个人中心', '积分余额、充值、消费明细和账号安全。'],
+  settings: ['设置', '全局默认模型和生成参数。'],
+};
 
-  async function load() {
-    const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-    if (error) setMsg(error.message);
-    setList(data || []);
-  }
-  useEffect(() => { load(); }, []);
-
-  async function add(e) {
-    e.preventDefault();
-    setMsg('');
-    const { error } = await supabase.from('projects').insert({ name: name.trim(), genre: genre.trim() });
-    if (error) return setMsg(error.message);
-    setName(''); setGenre('');
-    load();
-  }
-  async function setStatus(p, status) {
-    const { error } = await supabase.from('projects').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
-    if (error) setMsg(error.message);
-    load();
-  }
-  async function del(p) {
-    if (!confirm(`确定删除“${p.name}”？删除后无法恢复。`)) return;
-    const { error } = await supabase.from('projects').delete().eq('id', p.id);
-    if (error) setMsg(error.message);
-    load();
-  }
-
-  const shown = (list || []).filter(
-    (p) => (p.status === 'archived') === archived && p.name.toLowerCase().includes(q.toLowerCase())
-  );
-
+export default function Placeholder() {
+  const slug = usePathname().split('/')[1];
+  const info = INFO[slug];
+  if (!info) return <div className="empty">页面不存在</div>;
   return (
     <>
-      <h1>项目管理</h1>
-      <form className="card row" style={{ marginTop: 16 }} onSubmit={add}>
-        <div className="g"><input placeholder="项目名称" value={name} onChange={(e) => setName(e.target.value)} required /></div>
-        <div className="g"><input placeholder="题材，例如：甜宠、逆袭" value={genre} onChange={(e) => setGenre(e.target.value)} /></div>
-        <button className="btn p">新建项目</button>
-      </form>
-      {msg && <p className="err">{msg}</p>}
-      <div className="row" style={{ marginTop: 16 }}>
-        <div className="g"><input placeholder="搜索项目" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <button className="btn" onClick={() => setArchived(!archived)}>{archived ? '查看进行中' : '查看已归档'}</button>
+      <h1>{info[0]}</h1>
+      <div className="card" style={{ marginTop: 16 }}>
+        <p style={{ margin: 0 }}>{info[1]}</p>
+        <p className="mute" style={{ marginBottom: 0 }}>这个功能正在开发中，后续阶段上线。</p>
       </div>
-      {list === null ? (
-        <div className="empty">加载中…</div>
-      ) : shown.length === 0 ? (
-        <div className="empty">{archived ? '没有已归档的项目' : '还没有项目，先在上面新建一个。'}</div>
-      ) : (
-        <div className="grid">
-          {shown.map((p) => (
-            <div key={p.id} className="card">
-              <h3>{p.name}</h3>
-              <div className="mute">{p.genre || '未设题材'} · {new Date(p.created_at).toLocaleDateString('zh-CN')}</div>
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn" onClick={() => setStatus(p, archived ? 'active' : 'archived')}>{archived ? '恢复' : '归档'}</button>
-                <button className="btn d" onClick={() => del(p)}>删除</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </>
   );
 }
