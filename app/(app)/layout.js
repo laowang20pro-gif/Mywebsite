@@ -10,9 +10,6 @@ const NAV = [
   { href: '/scripts', label: '我的剧本' },
   { href: '/projects', label: '项目管理' },
   { href: '/assets', label: '素材库' },
-  { href: '/generate', label: '视频生成' },
-  { href: '/tasks', label: '任务中心' },
-  { href: '/videos', label: '视频与成片' },
   { href: '/account', label: '个人中心' },
   { href: '/settings', label: '设置' },
 ];
@@ -59,4 +56,3 @@ export default function AppLayout({ children }) {
     </AuthProvider>
   );
 }
-
