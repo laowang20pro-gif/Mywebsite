@@ -1,31 +1,50 @@
-import { VIDEO_MODELS, generateVideo } from './demo';
+'use client';
+import { useEffect, useState } from 'react';
+import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../lib/auth';
+import { fld, Field } from '../../../lib/ui';
+import { VIDEO_MODELS } from '../../../lib/demo';
+import { resolve } from '../../../lib/gen';
 
-const clean = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== '' && v != null));
-const has = (o, k) => !!o && o[k] !== '' && o[k] != null;
+export default function SettingsPage() {
+  const { user, ready, requireLogin } = useAuth();
+  const [s, setS] = useState({});
+  const [msg, setMsg] = useState('');
 
-// 三级继承：全局默认 → 项目默认 → 分镜单独设置，后面的覆盖前面的。
-// 模型不支持的清晰度和时长会自动换成该模型的第一个可选项，不会提交不支持的参数。
-export function resolve(g, p, s) {
-  const x = { model: VIDEO_MODELS[0].id, ...clean(g), ...clean(p), ...clean(s) };
-  const model = VIDEO_MODELS.find((m) => m.id === x.model) || VIDEO_MODELS[0];
-  return {
-    model,
-    quality: model.qualities.includes(x.quality) ? x.quality : model.qualities[0],
-    duration: model.durations.includes(x.duration) ? x.duration : model.durations[0],
-  };
-}
+  useEffect(() => {
+    if (!ready || !user) return;
+    supabase.from('user_settings').select('settings').maybeSingle().then(({ data }) => setS(data?.settings || {}));
+  }, [user, ready]);
 
-export const source = (k, g, p, s) => (has(s, k) ? '分镜' : has(p, k) ? '项目' : has(g, k) ? '全局' : '默认');
+  const eff = resolve(s, {}, {});
 
-const ORDER = ['content', 'action', 'scene', 'camera', 'size', 'light', 'style'];
-export function composePrompt(pr = {}) {
-  const main = ORDER.map((k) => pr[k]).filter(Boolean).join('，');
-  return pr.neg ? `${main}。避免：${pr.neg}` : main;
-}
+  function save() {
+    requireLogin(async () => {
+      const { data: u } = await supabase.auth.getUser();
+      const settings = { model: eff.model.id, quality: eff.quality, duration: eff.duration };
+      const { error } = await supabase.from('user_settings').upsert({ user_id: u.user.id, settings });
+      setMsg(error ? error.message : '已保存');
+      if (!error) setS(settings);
+    });
+  }
 
-// 演示：调用 lib/demo.js 的 generateVideo。以后接真实 fal.ai 时，改 demo.js 里那一个函数即可。
-export async function makeVideo(shot, params) {
-  const prompt = composePrompt(shot.prompt) || shot.title || '镜头';
-  const r = await generateVideo({ prompt, model: params.model.name, duration: params.duration, quality: params.quality });
-  return { url: r.url, model: params.model.name, quality: params.quality, duration: params.duration, prompt };
+  return (
+    <>
+      <h1>设置</h1>
+      <p className="mute">全局默认的视频生成参数。新项目和分镜默认沿用这里，也可以在项目里或某个分镜里单独覆盖。</p>
+      <div className="card" style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+        <h3>全局默认</h3>
+        <div className="row">
+          <div className="g"><Field label="视频模型"><select style={fld} value={eff.model.id} onChange={(e) => setS({ ...s, model: e.target.value })}>{VIDEO_MODELS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field></div>
+          <div className="g"><Field label="清晰度"><select style={fld} value={eff.quality} onChange={(e) => setS({ ...s, quality: e.target.value })}>{eff.model.qualities.map((q) => <option key={q}>{q}</option>)}</select></Field></div>
+          <div className="g"><Field label="时长"><select style={fld} value={eff.duration} onChange={(e) => setS({ ...s, duration: Number(e.target.value) })}>{eff.model.durations.map((d) => <option key={d} value={d}>{d} 秒</option>)}</select></Field></div>
+        </div>
+        <div className="row">
+          <button className="btn p" onClick={save}>保存</button>
+          {msg && <span className="mute">{msg}</span>}
+        </div>
+        <div className="mute">继承顺序：全局默认 → 项目默认 → 分镜单独设置，后面的覆盖前面的。</div>
+      </div>
+    </>
+  );
 }
