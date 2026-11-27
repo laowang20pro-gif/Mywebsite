@@ -1,119 +1,108 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/auth';
+import { fld } from '../../../lib/ui';
 import { DEMO, IMAGE_MODELS, VIDEO_MODELS, generateScript, generateImage, generateVideo } from '../../../lib/demo';
 
-const fld = { width: '100%', background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', fontSize: 16, fontFamily: 'inherit' };
-const Field = ({ label, children }) => (
-  <label style={{ display: 'grid', gap: 4 }}><span className="mute">{label}</span>{children}</label>
-);
+const MODES = [['script', '剧本'], ['image', '图片'], ['video', '视频']];
+const HINT = { script: '说说你的故事想法，我来写剧本', image: '描述你想要的图片', video: '描述你想要的视频画面' };
+const small = { ...fld, padding: '6px 8px', fontSize: 14, width: 'auto' };
 
-function ScriptTool() {
+export default function HomePage() {
   const { requireLogin } = useAuth();
-  const [idea, setIdea] = useState('');
-  const [genre, setGenre] = useState('');
-  const [content, setContent] = useState('');
+  const [mode, setMode] = useState('script');
+  const [text, setText] = useState('');
+  const [msgs, setMsgs] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [mid, setMid] = useState({ image: IMAGE_MODELS[0].id, video: VIDEO_MODELS[0].id });
+  const [quality, setQuality] = useState('');
+  const [duration, setDuration] = useState(5);
+  const end = useRef(null);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
-  async function run() {
-    if (!idea.trim()) return;
-    setBusy(true); setMsg('');
-    setContent(await generateScript({ idea: idea.trim(), genre: genre.trim() }));
-    setBusy(false);
-  }
-  function save() {
-    const title = idea.trim().slice(0, 20), prompt = idea.trim(), text = content;
+  const models = mode === 'image' ? IMAGE_MODELS : VIDEO_MODELS;
+  const m = models.find((x) => x.id === mid[mode]) || models[0];
+  const ql = m.qualities.includes(quality) ? quality : m.qualities[0];
+  const dur = m.durations ? (m.durations.includes(duration) ? duration : m.durations[0]) : null;
+
+  function send() {
+    const t = text.trim();
+    if (!t || busy) return;
     requireLogin(async () => {
-      const { error } = await supabase.from('scripts').insert({ title, prompt, content: text });
-      setMsg(error ? error.message : '已保存到“我的剧本”');
+      setText(''); setBusy(true);
+      setMsgs((l) => [...l, { role: 'user', mode, text: t }]);
+      let reply;
+      try {
+        if (mode === 'script') {
+          const content = await generateScript({ idea: t, genre: '' });
+          const { error } = await supabase.from('scripts').insert({ title: t.slice(0, 20), prompt: t, content });
+          reply = { kind: 'script', content, saved: error ? error.message : '已自动保存到“我的剧本”', href: '/scripts' };
+        } else {
+          const r = await (mode === 'image' ? generateImage : generateVideo)({ prompt: t, model: m.name, quality: ql, duration: dur });
+          const { error } = await supabase.from('assets').insert({
+            category: 'other', name: t.slice(0, 20), prompt: t,
+            images: [{ angle: mode === 'image' ? '图片' : '视频', kind: mode, url: r.url, model: m.name, quality: ql }],
+          });
+          reply = { kind: mode, url: r.url, info: `${m.name} · ${dur ? dur + '秒 · ' : ''}${ql}`, saved: error ? error.message : '已自动保存到素材库的“其他”', href: '/assets' };
+        }
+      } catch (e) {
+        reply = { kind: 'err', content: e.message || '生成失败' };
+      }
+      setMsgs((l) => [...l, { role: 'ai', ...reply }]);
+      setBusy(false);
     });
   }
 
   return (
-    <>
-      <Field label="你的想法"><textarea style={{ ...fld, minHeight: 90 }} value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="例如：女主发现总裁其实是她失散多年的青梅竹马" /></Field>
-      <Field label="题材（可选）"><input style={fld} value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="甜宠、逆袭、悬疑……" /></Field>
-      <button className="btn p" onClick={run} disabled={busy || !idea.trim()}>{busy ? '生成中…' : '生成剧本'}</button>
-      {content && (
-        <>
-          <Field label="生成结果（可以直接修改）"><textarea style={{ ...fld, minHeight: 260 }} value={content} onChange={(e) => setContent(e.target.value)} /></Field>
-          <div className="row">
-            <button className="btn p" onClick={save}>保存到我的剧本</button>
-            <Link href="/scripts" className="btn" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>去我的剧本</Link>
-          </div>
-          {msg && <div className="mute">{msg}</div>}
-        </>
-      )}
-    </>
-  );
-}
-
-function MediaTool({ kind }) {
-  const models = kind === 'image' ? IMAGE_MODELS : VIDEO_MODELS;
-  const [prompt, setPrompt] = useState('');
-  const [modelId, setModelId] = useState(models[0].id);
-  const [duration, setDuration] = useState(5);
-  const [quality, setQuality] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [results, setResults] = useState([]);
-
-  const m = models.find((x) => x.id === modelId) || models[0];
-  const dur = m.durations ? (m.durations.includes(duration) ? duration : m.durations[0]) : null;
-  const ql = m.qualities.includes(quality) ? quality : m.qualities[0];
-
-  async function run() {
-    if (!prompt.trim()) return;
-    setBusy(true);
-    const fn = kind === 'image' ? generateImage : generateVideo;
-    const r = await fn({ prompt: prompt.trim(), model: m.name, duration: dur, quality: ql });
-    setResults([{ ...r, id: Date.now(), prompt: prompt.trim(), model: m.name, quality: ql, duration: dur }, ...results]);
-    setBusy(false);
-  }
-
-  return (
-    <>
-      <Field label="画面描述"><textarea style={{ ...fld, minHeight: 90 }} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={kind === 'image' ? '例如：雨夜街头，撑伞的女孩回头' : '例如：镜头缓缓推近，女主在天台望向远方'} /></Field>
-      <div className="row">
-        <div className="g"><Field label="模型"><select style={fld} value={m.id} onChange={(e) => setModelId(e.target.value)}>{models.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field></div>
-        {m.durations && <div className="g"><Field label="时长"><select style={fld} value={dur} onChange={(e) => setDuration(Number(e.target.value))}>{m.durations.map((d) => <option key={d} value={d}>{d} 秒</option>)}</select></Field></div>}
-        <div className="g"><Field label="质量"><select style={fld} value={ql} onChange={(e) => setQuality(e.target.value)}>{m.qualities.map((q) => <option key={q}>{q}</option>)}</select></Field></div>
-      </div>
-      <button className="btn p" onClick={run} disabled={busy || !prompt.trim()}>{busy ? '生成中…' : kind === 'image' ? '生成图片' : '生成视频'}</button>
-      {results.length > 0 && (
-        <div className="grid" style={{ marginTop: 4 }}>
-          {results.map((r) => (
-            <div key={r.id} className="card" style={{ padding: 10 }}>
-              <img src={r.url} alt="" style={{ width: '100%', borderRadius: 8, display: 'block' }} />
-              <div style={{ marginTop: 8 }}><span className="tag">演示结果</span></div>
-              <div className="mute">{r.model} · {r.duration ? r.duration + '秒 · ' : ''}{r.quality}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-const TABS = [['script', '生成剧本'], ['image', '生成图片'], ['video', '生成视频']];
-
-export default function HomePage() {
-  const [tab, setTab] = useState('script');
-  return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 110px)' }}>
       <h1>主页</h1>
-      <p className="mute">三个独立的小工具，和短剧项目分开。</p>
-      <div className="row">
-        {TABS.map(([k, v]) => (
-          <button key={k} className={'btn' + (tab === k ? ' p' : '')} onClick={() => setTab(k)}>{v}</button>
-        ))}
+      {DEMO && <div className="mute" style={{ marginTop: 4 }}><span className="tag">演示模式</span> 结果是模拟的，不花钱。生成的内容会自动保存：剧本到“我的剧本”，图片和视频到素材库的“其他”。</div>}
+      <div style={{ flex: 1, display: 'grid', gap: 12, alignContent: 'start', padding: '16px 0' }}>
+        {msgs.length === 0 && <div className="empty">选好下面的“剧本 / 图片 / 视频”，然后说说你想要什么。</div>}
+        {msgs.map((x, i) =>
+          x.role === 'user' ? (
+            <div key={i} style={{ justifySelf: 'end', maxWidth: '85%', background: 'var(--acc)', borderRadius: 12, padding: '8px 12px' }}>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>{MODES.find((a) => a[0] === x.mode)[1]}</div>{x.text}
+            </div>
+          ) : (
+            <div key={i} className="card" style={{ justifySelf: 'start', maxWidth: '92%' }}>
+              {x.kind === 'script' && <div style={{ whiteSpace: 'pre-wrap' }}>{x.content}</div>}
+              {x.kind === 'err' && <div className="err">{x.content}</div>}
+              {(x.kind === 'image' || x.kind === 'video') && (
+                <>
+                  <img src={x.url} alt="" style={{ width: '100%', maxWidth: 420, borderRadius: 8, display: 'block' }} />
+                  <div className="mute" style={{ marginTop: 6 }}><span className="tag">{x.kind === 'video' ? '演示视频' : '演示图片'}</span> {x.info}</div>
+                </>
+              )}
+              {x.saved && <div className="mute" style={{ marginTop: 8 }}>{x.saved}　{x.href && <Link href={x.href} style={{ color: '#c7d2fe' }}>去查看</Link>}</div>}
+            </div>
+          )
+        )}
+        {busy && <div className="mute">生成中…</div>}
+        <div ref={end} />
       </div>
-      <div className="card" style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-        {DEMO && <div className="mute"><span className="tag">演示模式</span> 结果是模拟的，不会花钱。接上真实接口后才会生成真内容。</div>}
-        {tab === 'script' ? <ScriptTool /> : <MediaTool key={tab} kind={tab} />}
+
+      <div style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingBottom: 8 }}>
+        <div className="card" style={{ display: 'grid', gap: 8, padding: 10 }}>
+          <div className="row" style={{ alignItems: 'flex-end', flexWrap: 'nowrap' }}>
+            <textarea style={{ ...fld, minHeight: 48, maxHeight: 140, flex: 1 }} value={text} placeholder={HINT[mode]}
+              onChange={(e) => setText(e.target.value)} />
+            <button className="btn p" disabled={busy || !text.trim()} onClick={send}>发送</button>
+          </div>
+          <div className="row">
+            {MODES.map(([k, v]) => <button key={k} className={'btn' + (mode === k ? ' p' : '')} style={{ minHeight: 34, padding: '2px 14px' }} onClick={() => setMode(k)}>{v}</button>)}
+            {mode !== 'script' && (
+              <>
+                <select style={small} value={m.id} onChange={(e) => setMid({ ...mid, [mode]: e.target.value })}>{models.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                <select style={small} value={ql} onChange={(e) => setQuality(e.target.value)}>{m.qualities.map((q) => <option key={q}>{q}</option>)}</select>
+                {m.durations && <select style={small} value={dur} onChange={(e) => setDuration(Number(e.target.value))}>{m.durations.map((d) => <option key={d} value={d}>{d} 秒</option>)}</select>}
+              </>
+            )}
+          </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
