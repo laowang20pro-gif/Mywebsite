@@ -5,23 +5,23 @@ import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../lib/auth';
 import { fld } from '../../../lib/ui';
 import { Ads } from '../../../lib/Ad';
-import { DEMO, IMAGE_MODELS, VIDEO_MODELS, generateScript, generateImage, generateVideo } from '../../../lib/demo';
+import { DEMO } from '../../../lib/demo';
+import { LLM_MODELS, GENRES, writeScript, reviseScript } from '../../../lib/chat';
 
-const MODES = [['script', '剧本'], ['image', '图片'], ['video', '视频']];
-const HINT = { script: '说说你的故事想法，我来写剧本', image: '描述你想要的图片', video: '描述你想要的视频画面' };
-const small = { ...fld, padding: '6px 8px', fontSize: 14, width: 'auto' };
+const chip = { minHeight: 34, padding: '2px 12px' };
 
 export default function HomePage() {
   const { requireLogin } = useAuth();
   const [full, setFull] = useState(false);
-  const [mode, setMode] = useState('script');
   const [text, setText] = useState('');
   const [msgs, setMsgs] = useState([]);
   const [busy, setBusy] = useState(false);
   const [ads, setAds] = useState(null);
-  const [mid, setMid] = useState({ image: IMAGE_MODELS[0].id, video: VIDEO_MODELS[0].id });
-  const [quality, setQuality] = useState('');
-  const [duration, setDuration] = useState(5);
+  const [model, setModel] = useState(LLM_MODELS[0]);
+  const [genre, setGenre] = useState('');
+  const [open, setOpen] = useState(null); // 'model' | 'genre'
+  const [savedId, setSavedId] = useState(null);
+  const [saveMsg, setSaveMsg] = useState('');
   const end = useRef(null);
   const input = useRef(null);
 
@@ -35,49 +35,74 @@ export default function HomePage() {
     return () => { document.body.style.overflow = ''; };
   }, [full]);
 
-  const models = mode === 'image' ? IMAGE_MODELS : VIDEO_MODELS;
-  const m = models.find((x) => x.id === mid[mode]) || models[0];
-  const ql = m.qualities.includes(quality) ? quality : m.qualities[0];
-  const dur = m.durations ? (m.durations.includes(duration) ? duration : m.durations[0]) : null;
+  const lastIdx = msgs.map((x) => x.kind).lastIndexOf('script');
+  const last = lastIdx >= 0 ? msgs[lastIdx] : null;
+  const idea = msgs.find((x) => x.role === 'user')?.text;
+  const hint = last ? '说说想怎么改，比如：第二场加一点冲突' : '说说你的故事想法，AI 帮你写剧本';
 
   function send() {
     const t = text.trim();
     if (!t || busy) return;
     requireLogin(async () => {
-      setFull(true); setText(''); setBusy(true);
-      setMsgs((l) => [...l, { role: 'user', mode, text: t }]);
-      let reply;
+      setFull(true); setText(''); setOpen(null); setBusy(true);
+      setMsgs((l) => [...l, { role: 'user', text: t }]);
       try {
-        if (mode === 'script') {
-          const content = await generateScript({ idea: t, genre: '' });
-          const { error } = await supabase.from('scripts').insert({ title: t.slice(0, 20), prompt: t, content });
-          reply = { kind: 'script', content, saved: error ? error.message : '已自动保存到“我的剧本”', href: '/scripts' };
-        } else {
-          const r = await (mode === 'image' ? generateImage : generateVideo)({ prompt: t, model: m.name, quality: ql, duration: dur });
-          const { error } = await supabase.from('assets').insert({
-            category: 'other', name: t.slice(0, 20), prompt: t,
-            images: [{ angle: mode === 'image' ? '图片' : '视频', kind: mode, url: r.url, model: m.name, quality: ql }],
-          });
-          reply = { kind: mode, url: r.url, info: `${m.name} · ${dur ? dur + '秒 · ' : ''}${ql}`, saved: error ? error.message : '已自动保存到素材库的“其他”', href: '/assets' };
-        }
+        const content = last
+          ? await reviseScript({ script: last.content, feedback: t, model: model.name })
+          : await writeScript({ idea: t, genre, model: model.name });
+        setMsgs((l) => [...l, { role: 'ai', kind: 'script', content }]);
       } catch (e) {
-        reply = { kind: 'err', content: e.message || '生成失败' };
+        setMsgs((l) => [...l, { role: 'ai', kind: 'err', content: e.message || '生成失败' }]);
       }
-      setMsgs((l) => [...l, { role: 'ai', ...reply }]);
       setBusy(false);
     });
   }
 
+  function saveScript(content) {
+    requireLogin(async () => {
+      setSaveMsg('');
+      const res = savedId
+        ? await supabase.from('scripts').update({ content, updated_at: new Date().toISOString() }).eq('id', savedId)
+        : await supabase.from('scripts').insert({ title: (idea || '未命名').slice(0, 20), prompt: idea, content }).select('id').single();
+      if (res.error) return setSaveMsg(res.error.message);
+      if (!savedId) setSavedId(res.data.id);
+      setSaveMsg('已保存到“我的剧本”');
+    });
+  }
+
+  function newChat() { setMsgs([]); setSavedId(null); setSaveMsg(''); setText(''); }
+
   const controls = (
-    <div className="row">
-      {MODES.map(([k, v]) => <button key={k} className={'btn' + (mode === k ? ' p' : '')} style={{ minHeight: 34, padding: '2px 14px' }} onClick={() => setMode(k)}>{v}</button>)}
-      {mode !== 'script' && (
-        <>
-          <select style={small} value={m.id} onChange={(e) => setMid({ ...mid, [mode]: e.target.value })}>{models.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-          <select style={small} value={ql} onChange={(e) => setQuality(e.target.value)}>{m.qualities.map((q) => <option key={q}>{q}</option>)}</select>
-          {m.durations && <select style={small} value={dur} onChange={(e) => setDuration(Number(e.target.value))}>{m.durations.map((d) => <option key={d} value={d}>{d} 秒</option>)}</select>}
-        </>
+    <div style={{ position: 'relative' }}>
+      {open && (
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 6, zIndex: 5, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 10, padding: 10, maxHeight: '45vh', overflowY: 'auto', boxShadow: '0 -6px 20px rgba(0,0,0,.4)' }}>
+          {open === 'model' ? (
+            <div className="row">
+              {LLM_MODELS.map((m) => (
+                <button key={m.id} className={'btn' + (m.id === model.id ? ' p' : '')} style={chip} onClick={() => { setModel(m); setOpen(null); }}>{m.name}</button>
+              ))}
+            </div>
+          ) : (
+            <>
+              <button className={'btn' + (!genre ? ' p' : '')} style={chip} onClick={() => { setGenre(''); setOpen(null); }}>不限</button>
+              {GENRES.map((g) => (
+                <div key={g.group}>
+                  <div className="mute" style={{ margin: '10px 0 6px' }}>{g.group}</div>
+                  <div className="row">
+                    {g.items.map((it) => (
+                      <button key={it} className={'btn' + (genre === it ? ' p' : '')} style={chip} onClick={() => { setGenre(it); setOpen(null); }}>{it}</button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       )}
+      <div className="row">
+        <button className="btn" style={chip} onClick={() => setOpen(open === 'model' ? null : 'model')}>语言模型：{model.name} {open === 'model' ? '▼' : '▲'}</button>
+        <button className="btn" style={chip} onClick={() => setOpen(open === 'genre' ? null : 'genre')}>题材：{genre || '不限'} {open === 'genre' ? '▼' : '▲'}</button>
+      </div>
     </div>
   );
 
@@ -85,15 +110,15 @@ export default function HomePage() {
     <>
       <div style={{ textAlign: 'center', padding: '20px 0 16px' }}>
         <h1>把想法变成短剧</h1>
-        <div className="mute" style={{ marginTop: 4 }}>写剧本、生成图片和视频，作品会自动保存</div>
+        <div className="mute" style={{ marginTop: 4 }}>说出你的想法，AI 帮你写剧本，满意了再保存</div>
       </div>
       <div className="card" style={{ maxWidth: 720, margin: '0 auto', display: 'grid', gap: 10, padding: 12 }}>
         <div role="button" tabIndex={0} onClick={() => setFull(true)} onKeyDown={(e) => e.key === 'Enter' && setFull(true)}
           style={{ ...fld, minHeight: 80, cursor: 'text', color: text ? 'var(--ink)' : 'var(--mute)', whiteSpace: 'pre-wrap' }}>
-          {text || HINT[mode]}
+          {text || hint}
         </div>
         {controls}
-        {DEMO && <div className="mute"><span className="tag">演示模式</span> 结果是模拟的，不花钱。</div>}
+        {DEMO && <div className="mute"><span className="tag">演示模式</span> 剧本是模拟的，不花钱。</div>}
       </div>
 
       <div style={{ marginTop: 28 }}>
@@ -106,35 +131,37 @@ export default function HomePage() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--line)' }}>
             <button className="btn" onClick={() => setFull(false)}>收起</button>
-            <b>创作对话</b>
+            <b style={{ flex: 1 }}>创作对话</b>
+            {msgs.length > 0 && <button className="btn" onClick={newChat}>新对话</button>}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'grid', gap: 12, alignContent: 'start' }}>
-            {msgs.length === 0 && <div className="empty">选好下面的“剧本 / 图片 / 视频”，然后说说你想要什么。</div>}
+            {msgs.length === 0 && <div className="empty">说说你的故事想法，AI 会写出剧本。不满意就继续说修改意见，满意了再点“保存剧本”。</div>}
             {msgs.map((x, i) =>
               x.role === 'user' ? (
-                <div key={i} style={{ justifySelf: 'end', maxWidth: '85%', background: 'var(--acc)', borderRadius: 12, padding: '8px 12px' }}>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>{MODES.find((a) => a[0] === x.mode)[1]}</div>{x.text}
-                </div>
+                <div key={i} style={{ justifySelf: 'end', maxWidth: '85%', background: 'var(--acc)', borderRadius: 12, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>{x.text}</div>
+              ) : x.kind === 'err' ? (
+                <div key={i} className="card err" style={{ justifySelf: 'start' }}>{x.content}</div>
               ) : (
-                <div key={i} className="card" style={{ justifySelf: 'start', maxWidth: '92%' }}>
-                  {x.kind === 'script' && <div style={{ whiteSpace: 'pre-wrap' }}>{x.content}</div>}
-                  {x.kind === 'err' && <div className="err">{x.content}</div>}
-                  {(x.kind === 'image' || x.kind === 'video') && (
+                <div key={i} className="card" style={{ justifySelf: 'start', maxWidth: '95%', display: 'grid', gap: 10 }}>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{x.content}</div>
+                  {i === lastIdx && (
                     <>
-                      <img src={x.url} alt="" style={{ width: '100%', maxWidth: 420, borderRadius: 8, display: 'block' }} />
-                      <div className="mute" style={{ marginTop: 6 }}><span className="tag">{x.kind === 'video' ? '演示视频' : '演示图片'}</span> {x.info}</div>
+                      <div className="row">
+                        <button className="btn p" onClick={() => saveScript(x.content)}>{savedId ? '保存更改' : '保存剧本'}</button>
+                        <span className="mute">不满意？直接在下面说修改意见</span>
+                      </div>
+                      {saveMsg && <div className="mute">{saveMsg}　{!saveMsg.includes('错') && <Link href="/scripts" style={{ color: '#c7d2fe' }}>去我的剧本</Link>}</div>}
                     </>
                   )}
-                  {x.saved && <div className="mute" style={{ marginTop: 8 }}>{x.saved}　{x.href && <Link href={x.href} style={{ color: '#c7d2fe' }}>去查看</Link>}</div>}
                 </div>
               )
             )}
-            {busy && <div className="mute">生成中…</div>}
+            {busy && <div className="mute">AI 正在写…</div>}
             <div ref={end} />
           </div>
           <div style={{ padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))', borderTop: '1px solid var(--line)', display: 'grid', gap: 8 }}>
             <div className="row" style={{ alignItems: 'flex-end', flexWrap: 'nowrap' }}>
-              <textarea ref={input} style={{ ...fld, minHeight: 48, maxHeight: 140, flex: 1 }} value={text} placeholder={HINT[mode]} onChange={(e) => setText(e.target.value)} />
+              <textarea ref={input} style={{ ...fld, minHeight: 48, maxHeight: 140, flex: 1 }} value={text} placeholder={hint} onChange={(e) => setText(e.target.value)} />
               <button className="btn p" disabled={busy || !text.trim()} onClick={send}>发送</button>
             </div>
             {controls}
