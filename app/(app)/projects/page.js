@@ -15,8 +15,6 @@ export default function ProjectsPage() {
   const [q, setQ] = useState('');
   const [archived, setArchived] = useState(false);
   const [nf, setNf] = useState(blank);
-  const [edit, setEdit] = useState(null);
-  const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState('');
 
   async function load() {
@@ -56,53 +54,9 @@ export default function ProjectsPage() {
       load();
     });
   }
-  async function saveEdit() {
-    const { id, name, genre, aspect, style, episode_seconds, synopsis } = edit;
-    const { error } = await supabase.from('projects').update({
-      name: name.trim(), genre, aspect, style, synopsis,
-      episode_seconds: episode_seconds ? Number(episode_seconds) : null, updated_at: new Date().toISOString(),
-    }).eq('id', id);
-    setMsg(error ? error.message : '');
-    if (!error) setEdit(null);
-    load();
-  }
-  async function setStatus(p, status) {
-    const { error } = await supabase.from('projects').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
-    if (error) setMsg(error.message);
-    load();
-  }
-  async function del(p) {
-    if (!confirm(`确定删除“${p.name}”？项目里的剧集、分镜和视频也会一起删除，无法恢复。`)) return;
-    const { error } = await supabase.from('projects').delete().eq('id', p.id);
-    if (error) setMsg(error.message);
-    load();
-  }
-  async function copy(p) {
-    setBusy(p.id); setMsg('');
-    const { data: np, error } = await supabase.from('projects').insert({
-      name: p.name + '（副本）', genre: p.genre, synopsis: p.synopsis, aspect: p.aspect, style: p.style,
-      episode_seconds: p.episode_seconds, settings: p.settings,
-    }).select().single();
-    if (error) { setBusy(null); return setMsg(error.message); }
-    const eps = (await supabase.from('episodes').select('*').eq('project_id', p.id).order('number')).data || [];
-    if (eps.length) {
-      const ne = (await supabase.from('episodes').insert(eps.map((e) => ({ project_id: np.id, number: e.number, title: e.title, synopsis: e.synopsis }))).select('id,number')).data || [];
-      const map = Object.fromEntries(eps.map((e) => [e.id, ne.find((x) => x.number === e.number)?.id]));
-      const sb = (await supabase.from('storyboards').select('*').eq('project_id', p.id)).data || [];
-      if (sb.length) {
-        const r = await supabase.from('storyboards').insert(sb.map((s) => ({
-          project_id: np.id, episode_id: map[s.episode_id], number: s.number, title: s.title, duration: s.duration,
-          prompt: s.prompt, prompt_text: s.prompt_text, asset_ids: s.asset_ids, gen: s.gen,
-        })));
-        if (r.error) setMsg(r.error.message);
-      }
-    }
-    setBusy(null); load();
-  }
 
   const shown = (list || []).filter((p) => (p.status === 'archived') === archived && p.name.toLowerCase().includes(q.toLowerCase()));
   const set = (k) => (e) => setNf({ ...nf, [k]: e.target.value });
-  const setE = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
 
   return (
     <>
@@ -124,23 +78,6 @@ export default function ProjectsPage() {
       </form>
       {msg && <p className="err">{msg}</p>}
 
-      {edit && (
-        <div className="card" style={{ marginTop: 16, display: 'grid', gap: 8 }}>
-          <h3>编辑项目</h3>
-          <Field label="名称"><input style={fld} value={edit.name} onChange={setE('name')} /></Field>
-          <div className="row">
-            <div className="g"><Field label="题材"><input style={fld} value={edit.genre || ''} onChange={setE('genre')} /></Field></div>
-            <div className="g"><Field label="视觉风格"><input style={fld} value={edit.style || ''} onChange={setE('style')} /></Field></div>
-          </div>
-          <div className="row">
-            <div className="g"><Field label="画面比例"><select style={fld} value={edit.aspect || '9:16'} onChange={setE('aspect')}>{ASPECTS.map((a) => <option key={a}>{a}</option>)}</select></Field></div>
-            <div className="g"><Field label="单集时长（秒）"><input style={fld} type="number" min="0" value={edit.episode_seconds || ''} onChange={setE('episode_seconds')} /></Field></div>
-          </div>
-          <Field label="故事大纲"><textarea style={{ ...fld, minHeight: 80 }} value={edit.synopsis || ''} onChange={setE('synopsis')} /></Field>
-          <div className="row"><button className="btn p" onClick={saveEdit}>保存</button><button className="btn" onClick={() => setEdit(null)}>取消</button></div>
-        </div>
-      )}
-
       {ready && !user ? (
         <div className="card row" style={{ marginTop: 16 }}>
           <div className="g mute">登录后可以保存和管理你自己的项目。</div>
@@ -160,20 +97,13 @@ export default function ProjectsPage() {
                 const s = stat[p.id] || { eps: 0, shots: 0, vid: new Set() };
                 const pct = s.shots ? Math.round((s.vid.size / s.shots) * 100) : 0;
                 return (
-                  <div key={p.id} className="card">
-                    <h3>{p.name}</h3>
+                  <Link key={p.id} href={`/projects/${p.id}`} className="card" style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}>
+                    <h3>{p.name}{p.status === 'archived' && <span className="tag" style={{ marginLeft: 8 }}>已归档</span>}</h3>
                     <div className="mute">{[p.genre, p.aspect, p.style, p.episode_seconds ? p.episode_seconds + '秒/集' : ''].filter(Boolean).join(' · ') || '未设置'}</div>
                     <div className="mute">{s.eps} 集 · {s.shots} 个分镜 · {s.vid.size}/{s.shots} 已有视频</div>
                     <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, margin: '6px 0' }}><div style={{ width: pct + '%', height: '100%', background: 'var(--acc)', borderRadius: 3 }} /></div>
                     <div className="mute">最近更新 {new Date(p.updated_at || p.created_at).toLocaleDateString('zh-CN')}</div>
-                    <div className="row" style={{ marginTop: 10 }}>
-                      <Link href={`/projects/${p.id}`} className="btn p">打开</Link>
-                      <button className="btn" onClick={() => { setEdit({ ...p }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>编辑</button>
-                      <button className="btn" disabled={busy === p.id} onClick={() => copy(p)}>{busy === p.id ? '复制中…' : '复制'}</button>
-                      <button className="btn" onClick={() => setStatus(p, archived ? 'active' : 'archived')}>{archived ? '恢复' : '归档'}</button>
-                      <button className="btn d" onClick={() => del(p)}>删除</button>
-                    </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
